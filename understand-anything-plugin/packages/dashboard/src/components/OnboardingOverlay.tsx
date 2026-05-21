@@ -1,53 +1,59 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../contexts/I18nContext";
 
 /**
- * First-visit onboarding overlay.
+ * First-visit onboarding overlay (controlled).
  *
- * Renders 5 dismissible steps that teach a new user how to operate the dashboard.
- * State persists in localStorage so returning users are not interrupted.
+ * Parent owns the visibility + persistence state (see App.tsx). This component
+ * only renders the modal and reports the user's intent via onDismiss:
+ *   - onDismiss(true)  → "Skip" / Finish — parent should persist.
+ *   - onDismiss(false) → backdrop click / Escape — parent should close without persisting.
  *
- * Force-show via `?onboard=force` URL param (useful for screenshots / demos).
+ * Force-show is handled by the parent (see `shouldShowOnboarding` in App.tsx).
  */
 
-const STORAGE_KEY = "ua-onboarding-dismissed-v1";
+interface Props {
+  onDismiss: (remember: boolean) => void;
+}
 
-export default function OnboardingOverlay() {
+const TITLE_ID = "ua-onboarding-title";
+
+export default function OnboardingOverlay({ onDismiss }: Props) {
   const { t } = useI18n();
   const STEPS = t.onboarding.steps;
   const [stepIdx, setStepIdx] = useState(0);
-  const [open, setOpen] = useState(false);
 
+  // Capture-phase Escape handler — runs before the global keydown chain so we
+  // can stopPropagation() and prevent it from also firing.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const force = params.get("onboard") === "force";
-    const dismissed = window.localStorage.getItem(STORAGE_KEY) === "1";
-    if (force || !dismissed) setOpen(true);
-  }, []);
-
-  if (!open) return null;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onDismiss(false);
+      }
+    };
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
+  }, [onDismiss]);
 
   const isFirst = stepIdx === 0;
   const isLast = stepIdx === STEPS.length - 1;
   const step = STEPS[stepIdx];
 
-  function dismiss(remember: boolean) {
-    if (remember && typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, "1");
-    }
-    setOpen(false);
-  }
-
   return (
     <div
       style={overlayStyle}
       onClick={(e) => {
-        if (e.target === e.currentTarget) dismiss(false);
+        if (e.target === e.currentTarget) onDismiss(false);
       }}
     >
       <style>{KEYFRAMES}</style>
-      <div style={cardStyle}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={TITLE_ID}
+        style={cardStyle}
+      >
         <div style={tagStyle}>
           <span style={numStyle}>0{stepIdx + 1}</span>
           <span> / 0{STEPS.length}</span>
@@ -55,11 +61,13 @@ export default function OnboardingOverlay() {
           <span>{t.onboarding.header}</span>
         </div>
 
-        <h2 style={titleStyle}>{step.title}</h2>
+        <h2 id={TITLE_ID} style={titleStyle}>
+          {step.title}
+        </h2>
         <p style={bodyStyle}>{step.body}</p>
         {step.hint && (
           <blockquote style={hintStyle}>
-            <span style={{ color: "#c8a882", marginRight: 8 }}>·</span>
+            <span style={{ color: "var(--color-accent)", marginRight: 8 }}>·</span>
             {step.hint}
           </blockquote>
         )}
@@ -70,7 +78,10 @@ export default function OnboardingOverlay() {
               key={i}
               style={{
                 ...dotProgressStyle,
-                background: i === stepIdx ? "#c8a882" : "#444",
+                background:
+                  i === stepIdx
+                    ? "var(--color-accent)"
+                    : "var(--color-border-medium)",
                 width: i === stepIdx ? 28 : 6,
               }}
             />
@@ -80,7 +91,7 @@ export default function OnboardingOverlay() {
         <div style={btnRowStyle}>
           <button
             type="button"
-            onClick={() => dismiss(true)}
+            onClick={() => onDismiss(true)}
             style={{ ...btnStyle, ...btnGhostStyle }}
           >
             {t.onboarding.skipForever}
@@ -106,7 +117,7 @@ export default function OnboardingOverlay() {
           ) : (
             <button
               type="button"
-              onClick={() => dismiss(true)}
+              onClick={() => onDismiss(true)}
               style={{ ...btnStyle, ...btnPrimaryStyle }}
             >
               {t.onboarding.finish}
@@ -120,8 +131,6 @@ export default function OnboardingOverlay() {
 
 const KEYFRAMES = `@keyframes ua-fade-in { from { opacity: 0 } to { opacity: 1 } }`;
 
-// ----- styles (inline 避免依赖 css 文件) -----
-
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
@@ -132,26 +141,25 @@ const overlayStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   padding: 16,
-  fontFamily:
-    '"Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif',
+  fontFamily: "var(--font-sans)",
   animation: "ua-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1)",
 };
 
 const cardStyle: React.CSSProperties = {
-  background: "#1a1a1a",
-  color: "#fafafa",
+  background: "var(--color-elevated)",
+  color: "var(--color-text-primary)",
   maxWidth: 580,
   width: "100%",
   padding: "48px 48px 36px",
-  border: "1px solid #2a2a2a",
-  borderTop: "2px solid #c8a882",
+  border: "1px solid var(--color-border-subtle)",
+  borderTop: "2px solid var(--color-accent)",
   position: "relative",
 };
 
 const tagStyle: React.CSSProperties = {
   fontSize: "0.72rem",
   letterSpacing: "0.3em",
-  color: "#888",
+  color: "var(--color-text-muted)",
   textTransform: "uppercase",
   marginBottom: 24,
   display: "flex",
@@ -161,8 +169,8 @@ const tagStyle: React.CSSProperties = {
 };
 
 const numStyle: React.CSSProperties = {
-  fontFamily: '"Noto Serif SC", Georgia, serif',
-  color: "#c8a882",
+  fontFamily: "var(--font-heading)",
+  color: "var(--color-accent)",
   fontSize: "0.9rem",
   letterSpacing: "0.1em",
   marginRight: 4,
@@ -171,35 +179,35 @@ const numStyle: React.CSSProperties = {
 const dotStyle: React.CSSProperties = {
   width: 4,
   height: 4,
-  background: "#c8a882",
+  background: "var(--color-accent)",
   borderRadius: "50%",
   margin: "0 12px",
 };
 
 const titleStyle: React.CSSProperties = {
-  fontFamily: '"Noto Serif SC", Georgia, serif',
+  fontFamily: "var(--font-heading)",
   fontSize: "1.7rem",
   fontWeight: 400,
   letterSpacing: "0.02em",
   lineHeight: 1.3,
   marginBottom: 16,
-  color: "#fafafa",
+  color: "var(--color-text-primary)",
 };
 
 const bodyStyle: React.CSSProperties = {
   fontSize: "0.98rem",
   lineHeight: 1.7,
-  color: "#bbb",
+  color: "var(--color-text-secondary)",
   marginBottom: 0,
 };
 
 const hintStyle: React.CSSProperties = {
   margin: "20px 0 0",
   padding: "12px 18px",
-  borderLeft: "2px solid #5a4a3a",
-  background: "rgba(200, 168, 130, 0.06)",
+  borderLeft: "2px solid var(--color-border-medium)",
+  background: "var(--color-accent-overlay-bg)",
   fontSize: "0.86rem",
-  color: "#c8a882",
+  color: "var(--color-accent)",
   fontStyle: "italic",
 };
 
@@ -236,13 +244,13 @@ const btnStyle: React.CSSProperties = {
 
 const btnGhostStyle: React.CSSProperties = {
   background: "transparent",
-  borderColor: "#444",
-  color: "#888",
+  borderColor: "var(--color-border-medium)",
+  color: "var(--color-text-muted)",
 };
 
 const btnPrimaryStyle: React.CSSProperties = {
-  background: "#c8a882",
-  borderColor: "#c8a882",
-  color: "#1a1a1a",
+  background: "var(--color-accent)",
+  borderColor: "var(--color-accent)",
+  color: "var(--color-root)",
   fontWeight: 500,
 };

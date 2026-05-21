@@ -36,7 +36,15 @@ const OnboardingOverlay = lazy(() => import("./components/OnboardingOverlay"));
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
 const SESSION_TOKEN_KEY = "understand-anything-token";
+const ONBOARDING_DISMISSED_KEY = "ua-onboarding-dismissed-v1";
 type SidebarTab = "info" | "files";
+
+function shouldShowOnboarding(): boolean {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("onboard") === "force") return true;
+  return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "1";
+}
 
 /** Resolve data file URL — in demo mode, use env var URLs; otherwise use local paths with token. */
 function dataUrl(fileName: string, token: string | null): string {
@@ -236,6 +244,13 @@ function DashboardContent({
   const toggleShowFunctionsInClassView = useDashboardStore((s) => s.toggleShowFunctionsInClassView);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("info");
+  const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
+  const dismissOnboarding = useCallback((remember: boolean) => {
+    if (remember && typeof window !== "undefined") {
+      window.localStorage.setItem(ONBOARDING_DISMISSED_KEY, "1");
+    }
+    setShowOnboarding(false);
+  }, []);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
   const isKnowledgeGraph = useDashboardStore((s) => s.isKnowledgeGraph);
@@ -685,10 +700,12 @@ function DashboardContent({
         </Suspense>
       )}
 
-      {/* First-visit onboarding overlay — auto-hides after dismiss via localStorage. */}
-      <Suspense fallback={null}>
-        <OnboardingOverlay />
-      </Suspense>
+      {/* First-visit onboarding overlay — only mounted when needed so its chunk is lazy-loaded on demand. */}
+      {showOnboarding && (
+        <Suspense fallback={null}>
+          <OnboardingOverlay onDismiss={dismissOnboarding} />
+        </Suspense>
+      )}
     </div>
   );
 }
